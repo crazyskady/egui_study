@@ -11,6 +11,7 @@ use egui_plot::{
 enum Panel {
     Lines,
     Markers,
+    Sins,
 }
 
 impl Default for Panel {
@@ -23,6 +24,7 @@ impl Default for Panel {
 pub struct PlotDemo {
     line_demo: LineDemo,
     marker_demo: MarkerDemo,
+    sin_demo: SinDemo,
     open_panel: Panel,
 }
 
@@ -48,6 +50,7 @@ impl PlotDemo {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.open_panel, Panel::Lines, "Lines");
             ui.selectable_value(&mut self.open_panel, Panel::Markers, "Markers");
+            ui.selectable_value(&mut self.open_panel, Panel::Sins, "Sins");
         });
         ui.separator();
 
@@ -57,6 +60,9 @@ impl PlotDemo {
             }
             Panel::Markers => {
                 self.marker_demo.ui(ui);
+            }
+            Panel::Sins => {
+                self.sin_demo.ui(ui);
             }
         }
     }
@@ -423,5 +429,138 @@ impl MarkerDemo {
                 }
             })
             .response
+    }
+}
+
+
+#[derive(Copy, Clone, PartialEq)]
+struct SinDemo {
+    animate: bool,
+    time: f64,
+    sin_nums: u32,
+    square: bool,
+    proportional: bool,
+    coordinates: bool,
+    show_axes: bool,
+    show_grid: bool,
+    line_style: LineStyle,
+}
+
+impl Default for SinDemo {
+    fn default() -> Self {
+        Self {
+            animate: !cfg!(debug_assertions),
+            time: 0.0,
+            sin_nums: 1,
+            square: false,
+            proportional: true,
+            coordinates: true,
+            show_axes: true,
+            show_grid: true,
+            line_style: LineStyle::Solid,
+        }
+    }
+}
+
+impl SinDemo {
+    fn options_ui(&mut self, ui: &mut Ui) {
+        let Self {
+            animate,
+            time: _,
+            sin_nums,
+            square,
+            proportional,
+            coordinates,
+            show_axes,
+            show_grid,
+            line_style,
+        } = self;
+
+        ui.horizontal(|ui| {
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    ui.label("Sin Parameters:");
+                    ui.add(
+                        egui::DragValue::new(sin_nums)
+                            .speed(0.1)
+                            .clamp_range(1..=1024)
+                            .prefix("nums: "),
+                    );
+                });
+            });
+
+            ui.vertical(|ui| {
+                ui.checkbox(show_axes, "Show axes");
+                ui.checkbox(show_grid, "Show grid");
+                ui.checkbox(coordinates, "Show coordinates on hover")
+                    .on_hover_text("Can take a custom formatting function.");
+            });
+
+            ui.vertical(|ui| {
+                ui.style_mut().wrap = Some(false);
+                ui.checkbox(animate, "Animate");
+                ui.checkbox(square, "Square view")
+                    .on_hover_text("Always keep the viewport square.");
+                ui.checkbox(proportional, "Proportional data axes")
+                    .on_hover_text("Tick are the same size on both axes.");
+
+                ComboBox::from_label("Line style")
+                    .selected_text(line_style.to_string())
+                    .show_ui(ui, |ui| {
+                        for style in &[
+                            LineStyle::Solid,
+                            LineStyle::dashed_dense(),
+                            LineStyle::dashed_loose(),
+                            LineStyle::dotted_dense(),
+                            LineStyle::dotted_loose(),
+                        ] {
+                            ui.selectable_value(line_style, *style, style.to_string());
+                        }
+                    });
+            });
+        });
+    }
+
+    fn sin(&self, idx: u32) -> Line {
+        let time = self.time;
+        Line::new(PlotPoints::from_explicit_callback(
+            move |x| 0.5 * (2.0 * x).sin() * time.sin() + idx as f64,
+            ..,
+            512,
+        ))
+        .color(Color32::from_rgb(200, 100, 100))
+        .style(self.line_style)
+        .name("wave")
+    }
+}
+
+impl SinDemo {
+    fn ui(&mut self, ui: &mut Ui) -> Response {
+        self.options_ui(ui);
+
+        if self.animate {
+            ui.ctx().request_repaint();
+            self.time += ui.input(|i| i.unstable_dt).at_most(1.0 / 30.0) as f64;
+        };
+        let mut plot = Plot::new("lines_demo")
+            .legend(Legend::default())
+            .y_axis_width(4)
+            .show_axes(self.show_axes)
+            .show_grid(self.show_grid);
+        if self.square {
+            plot = plot.view_aspect(1.0);
+        }
+        if self.proportional {
+            plot = plot.data_aspect(1.0);
+        }
+        if self.coordinates {
+            plot = plot.coordinates_formatter(Corner::LeftBottom, CoordinatesFormatter::default());
+        }
+        plot.show(ui, |plot_ui| {
+            for i in 0..self.sin_nums {
+                plot_ui.line(self.sin(i));
+            }
+        })
+        .response
     }
 }
